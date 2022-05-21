@@ -1,0 +1,59 @@
+---
+title: "Clase de ONA 2022"
+author: "Sergio Garcia Mora"
+date: "20/5/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Introducción
+
+En este documento veremos un par de ejemplos para desarrollar grafos aplicados en proyectos de **Organizational Network Analysis**.
+
+
+Estos son los paquetes que necesitaremos. Para cargarlos e instalarlos, recomendamos instalar el paquete `pacman` que permite cargar los paquetes si están instalados previamente, y si no lo están, `pacman` los instala y carga.
+
+
+```{r paquetes}
+pacman::p_load(tidyverse, onadata, visNetwork, igraph, networkD3)
+```
+
+# Primer caso: Programa de referidos
+
+Un problema recurrente en las empresas de tecnología es que como hay alta demanda de gente, el mercado es muy competitivo, y entonces las empresas apelan a los referidos para conseguir candidatos para entrevistar.
+
+Las ventajas de los programas de los referidos son varias:
+
+- Las personas que llegan recomendadas suelen ser más capaces para el puesto (nadie recomendaría a alguien que lo dejaría mal)
+- Es bueno para las personas que ingresan recomendadas y también para las personas que hicieron la recomendación ya que por lo general el hecho que se conozcan de antes, ayuda a que la integración sea más fluida y siempre está bueno trabajar con una persona amiga.
+
+## Como encarar el programa de referidos con ONA
+
+La premisa es la siguiente: vamos a armar un dataset, recolectando las conexiones de LinkedIn de unos supuestos empleados de la empresa, y la idea es descubrir a las personas más influyentes de la red. ¿Cómo definimos influencia en este caso? Por la cantidad de conexiones de cada contacto. Si un contacto tiene muchas conexiones, entonces asumiremos que esa persona es influyente dentro de la red.
+
+El problema que tienen las personas de recruiting no es encontrar gente para una vacante, sino abrir el canal de comunicación con personas que no están buscando trabajo activamente.
+
+Entonces el plan es descubrir a las personas de mayor influencia dentro de la red, y luego preguntar a nuestros propios empleados y empleadas **¿Quién conoce a esta persona en la vida real?** y que sea esa persona que abra el canal de comunicación entre el equipo de recruiting y la(s) persona(s) que encontremos en la red.
+
+## El dataset
+
+Vamos a trabajar con un dataset armado con los contactos de LinkedIn míos y de un par de colegas.
+
+```{r datos1}
+# Carga de datos
+contactos <- read_delim("datos/contactos.csv", delim = ";")
+
+# Usemos la función glimpse() para explorar el dataset
+
+```
+
+Ahora creemos un subset de personas cuya posición contenga las palabras `data scientist`, `data analyst` o `data analytics`. 
+
+```{r}
+data_scientist <- contactos %>% 
+  filter(str_detect(Position, "data.scientist")|str_detect(Position, "data.analyst|analytics"))
+```
+
