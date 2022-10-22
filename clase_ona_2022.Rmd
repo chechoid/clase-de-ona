@@ -2,7 +2,12 @@
 title: "Clase de ONA 2022"
 author: "Sergio Garcia Mora"
 date: "20/5/2022"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_download: true
+    code_folding: show
 ---
 
 ```{r setup, include=FALSE}
@@ -13,9 +18,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 En este documento veremos un par de ejemplos para desarrollar grafos aplicados en proyectos de **Organizational Network Analysis**.
 
-
 Estos son los paquetes que necesitaremos. Para cargarlos e instalarlos, recomendamos instalar el paquete `pacman` que permite cargar los paquetes si están instalados previamente, y si no lo están, `pacman` los instala y carga.
-
 
 ```{r paquetes}
 pacman::p_load(tidyverse, onadata, visNetwork, igraph, networkD3)
@@ -27,8 +30,8 @@ Un problema recurrente en las empresas de tecnología es que como hay alta deman
 
 Las ventajas de los programas de los referidos son varias:
 
-- Las personas que llegan recomendadas suelen ser más capaces para el puesto (nadie recomendaría a alguien que lo dejaría mal)
-- Es bueno para las personas que ingresan recomendadas y también para las personas que hicieron la recomendación ya que por lo general el hecho que se conozcan de antes, ayuda a que la integración sea más fluida y siempre está bueno trabajar con una persona amiga.
+-   Las personas que llegan recomendadas suelen ser más capaces para el puesto (nadie recomendaría a alguien que lo dejaría mal)
+-   Es bueno para las personas que ingresan recomendadas y también para las personas que hicieron la recomendación ya que por lo general el hecho que se conozcan de antes, ayuda a que la integración sea más fluida y siempre está bueno trabajar con una persona amiga.
 
 ## Como encarar el programa de referidos con ONA
 
@@ -47,13 +50,66 @@ Vamos a trabajar con un dataset armado con los contactos de LinkedIn míos y de 
 contactos <- read_delim("datos/contactos.csv", delim = ";")
 
 # Usemos la función glimpse() para explorar el dataset
-
 ```
 
-Ahora creemos un subset de personas cuya posición contenga las palabras `data scientist`, `data analyst` o `data analytics`. 
+Ahora creemos un subset de personas cuya posición contenga las palabras `data scientist`, `data analyst` o `data analytics`.
 
 ```{r}
 data_scientist <- contactos %>% 
   filter(str_detect(Position, "data.scientist")|str_detect(Position, "data.analyst|analytics"))
 ```
 
+Luego creamos un par de data frames de las columnas de `Oringen` y de `nombre_apellido` con el propósito de identificar a los valores únicos de cada columna
+
+```{r}
+# Identificamos los datos únicos de origen
+origen <- data_scientist %>% 
+  distinct(Origen) %>% 
+  rename(label=Origen)
+
+# Identificamos los datos únicos de contacto
+contacto <- data_scientist %>% 
+  distinct(nombre_apellido) %>% 
+  rename(label=nombre_apellido)
+
+# Ver los data frames
+
+```
+
+El siguiente paso es unir ambos data frames de valores únicos en uno que llamaremos `nodos`.
+
+```{r}
+# Unificamos los dos dataframes
+nodes <- full_join(origen, contacto, by = "label")
+
+# Añadimos una columna de ID
+nodes <- nodes %>% rowid_to_column("id")
+
+```
+
+A continuación vamos a empezar a contruir nuestro grafo. Como en la columna de `Origen` tiene sólo tres valores, no vamos a tener un peso mayor que 1. En este paso lo que hacemos es identificar a las personas por el `id` que generamos en el paso anterior.
+
+```{r}
+# Calculamos la cantidad de conexiones entre Origen y Contacto
+conexion <- data_scientist %>% 
+  group_by(Origen, nombre_apellido) %>% 
+  summarise(peso = n()) %>% 
+  ungroup()
+
+# Indico a las aristas cuál es el nodo de origen y cuál el de destino
+aristas <- conexion %>% 
+  left_join(nodes, by = c("Origen" = "label")) %>% 
+  rename(from = id)
+
+aristas <- aristas %>% 
+  left_join(nodes, by = c("nombre_apellido" = "label")) %>% 
+  rename(to = id)
+
+# Ver el dataset
+aristas
+
+# Seleccionamos algunas columnas
+aristas <- select(aristas, from, to, peso)
+
+
+```
