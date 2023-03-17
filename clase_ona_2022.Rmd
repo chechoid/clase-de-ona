@@ -1,7 +1,7 @@
 ---
 title: "Clase de ONA 2022"
 author: "Sergio Garcia Mora"
-date: "20/5/2022"
+date: "17/03/2023"
 output: 
   html_document:
     toc: true
@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 # Introducción
 
-En este documento veremos un par de ejemplos para desarrollar grafos aplicados en proyectos de **Organizational Network Analysis**.
+En este documento veremos un ejemplo para desarrollar grafos aplicados en proyectos de **Organizational Network Analysis**.
 
 Estos son los paquetes que necesitaremos. Para cargarlos e instalarlos, recomendamos instalar el paquete `pacman` que permite cargar los paquetes si están instalados previamente, y si no lo están, `pacman` los instala y carga.
 
@@ -50,16 +50,20 @@ Vamos a trabajar con un dataset armado con los contactos de LinkedIn míos y de 
 contactos <- read_delim("datos/contactos.csv", delim = ";")
 
 # Usemos la función glimpse() para explorar el dataset
+
 ```
 
 Ahora creemos un subset de personas cuya posición contenga las palabras `data scientist`, `data analyst` o `data analytics`.
 
 ```{r}
+# Filtrar donde la posición diga "Data Scientist", "Data Analyst" o "Data Analytics"
 data_scientist <- contactos %>% 
   filter(str_detect(Position, "data.scientist")|str_detect(Position, "data.analyst|analytics"))
+
+glimpse(data_scientist)
 ```
 
-Luego creamos un par de data frames de las columnas de `Oringen` y de `nombre_apellido` con el propósito de identificar a los valores únicos de cada columna
+Luego creamos un par de data frames de las columnas de `Origen` y de `nombre_apellido` con el propósito de identificar a los valores únicos de cada columna
 
 ```{r}
 # Identificamos los datos únicos de origen
@@ -85,6 +89,7 @@ nodes <- full_join(origen, contacto, by = "label")
 # Añadimos una columna de ID
 nodes <- nodes %>% rowid_to_column("id")
 
+nodes
 ```
 
 A continuación vamos a empezar a contruir nuestro grafo. Como en la columna de `Origen` tiene sólo tres valores, no vamos a tener un peso mayor que 1. En este paso lo que hacemos es identificar a las personas por el `id` que generamos en el paso anterior.
@@ -113,3 +118,359 @@ aristas <- select(aristas, from, to, peso)
 
 
 ```
+
+## Creación del grafo
+
+Ahora veremos una alternativa de grafo:
+
+```{r}
+# Empezamos a construir el grafo
+
+edges <- mutate(aristas, width = peso/5 + 1)
+
+nodes$color <- c(rep("#DD6B06", 3), rep("#2CAFBB", 261))
+
+# Visualizar el grafo
+referidos <- visNetwork(nodes, aristas) %>% 
+  visIgraphLayout(layout = "layout_with_fr") %>% 
+    visNodes(color = list(background = "#5DBAC3",
+                        border = "#01636D")) %>% 
+  visEdges(color = list(color = "grey", highlight = "#014D54" )) %>% 
+  visOptions(highlightNearest = TRUE)
+
+# visSave(referidos, file = "referidos.html")
+
+referidos
+
+```
+
+Y ahora probemos con otro paquete:
+
+```{r}
+# Otra alternativa
+nodes_d3 <- mutate(nodes, id = id - 1)
+edges_d3 <- mutate(aristas, from = from - 1, to = to - 1)
+
+forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to", 
+             NodeID = "label", Group = "color", Value = "peso", 
+             opacity = 1, fontSize = 16, zoom = TRUE)
+
+```
+
+# Segundo Caso: Text Mining
+
+Los grafos también se pueden utilizar dentro de los análisis de text mining para verificar cómo se relacionan los términos entre sí. En este caso vamos a tomar un par de columnas de la [Encuesta KIWI de Sueldos de RRHH](https://rpubs.com/Data4HR/encuesta-kiwi-2022) que desarrollamos en R4HR.
+
+En la última edición de esta encuesta hicimos unas preguntas en torno al burn out.
+
+* Del 1 al 10, ¿qué tan estresado o estresada te sentís?
+* En comparación con el año pasado, ¿cómo te sentís?
+* Motivo principal por el cual sentís estrés en el trabajo.
+
+> Este análisis fue publicada previamente en [este link](https://chechoid.quarto.pub/burn_out/#/burn-out-en-rrhh)
+
+```{r burn_out_paquetes}
+pacman::p_load(wordcloud2, tidytext, igraph, ggraph, grid)
+
+# Carga de datos
+kiwi <- read_delim("https://raw.githubusercontent.com/r4hr/kiwi2022/main/data/kiwi_2022.csv", delim = ";") %>% 
+  janitor::clean_names()
+```
+
+Parte de este análisis era determinar los niveles de estrés entre las personas que trabajan en RRHH
+
+```{r estres}
+burn <- kiwi %>%
+  filter(!is.na(estres)) %>% 
+  select(estres, motivo)
+
+# Transformar en categórica la variable estrés
+burn <- burn %>% 
+  mutate(estres_cat = case_when(
+    estres <= 2 ~ "Sin Estrés",
+    estres <= 4 ~ "Estrés Bajo",
+    estres <= 6 ~ "Estrés Moderado",
+    estres <= 8 ~ "Estrés Alto",
+    estres <= 10 ~ "Estrés Muy Alto"
+  ),
+  estres_cat = factor(estres_cat, 
+                      levels = c("Sin Estrés", "Estrés Bajo", 
+                                 "Estrés Moderado",
+                                 "Estrés Alto", "Estrés Muy Alto")))
+
+
+# Calcular porcentajes de los resultados.
+niveles <- burn %>% 
+  group_by(estres_cat) %>% 
+  summarise(cant = n()) %>% 
+  ungroup() %>%
+  mutate(Porcentaje = cant/sum(cant))
+
+ggplot(niveles, aes(x = estres_cat, y = cant, fill = estres_cat)) +
+  geom_col() +
+  geom_text(aes(label = scales::percent(Porcentaje, accuracy = 1)),
+            vjust = 1.2,
+            color = "white", 
+            face = "bold",
+            size = 4) +
+  scale_fill_viridis_d(direction = -1)+
+  labs(title = "Niveles de estrés en RRHH",
+       subtitle = paste0("En base a ", sum(niveles$cant), " respuestas recibidas"),
+       x = NULL, y = NULL, 
+       fill = NULL) +
+  theme(legend.position = "none")
+```
+
+Todo muy lindo, pero lo que nos interesa es la parte de text mining.
+
+## Causas de la sensación de estrés
+
+Usando la pregunta sobre los motivos de estrés, en primer lugar creamos una nube de palabras donde podremos ver las causas mencionadas en esta pregunta abierta sobre las causas de la sensación de estrés de las personas que trabajan en RRHH.
+
+```{r}
+# Separar las palabras en filas individuales
+causa <- burn %>% 
+  filter(!is.na(motivo)) %>% 
+  select(motivo) %>% 
+  unnest_tokens(palabra, motivo)
+
+# Lexicon de palabras vacías
+vacias <- read_csv("https://raw.githubusercontent.com/7PartidasDigital/AnaText/master/datos/diccionarios/vacias.txt",
+                               locale = default_locale())
+
+# Eliminar palabras vacías
+causa <- causa %>% 
+  anti_join(vacias, by = "palabra")
+
+# Contar la cantidad de veces que aparece cada palabra
+ causa <- causa %>%
+   count(palabra, sort = T, name = "freq")
+
+# Crear la nube de palabras
+nube <- wordcloud2(data = causa,
+           size = 0.8,
+           rotateRatio = 1,
+           color = rep_len(c("#D4499C", "#3500B3", "#02D9C5", "#5463A8", "#DEF241"),                          nrow(causa)))
+nube
+```
+
+Podemos apreciar que las 5 principales palabras son: 
+
+1. *`r pull(causa[1,1])`*: con `r pull(causa[1,2])` apariciones
+2. *`r pull(causa[2,1])`*: con `r pull(causa[2,2])` apariciones
+3. *`r pull(causa[3,1])`*: con `r pull(causa[3,2])` apariciones
+4. *`r pull(causa[4,1])`*: con `r pull(causa[4,2])` apariciones
+5. *`r pull(causa[5,1])`*: con `r pull(causa[5,2])` apariciones
+
+Esto nos daría a entender que una de las principales causas de estrés es la alta carga de trabajo con la que contamos y la falta de recursos que tenemos.
+
+A continuación intentaremos analizar las relaciones de estos conceptos, para lo cual lo que haremos en primer lugar es agrupar las palabras de a pares, llamados *bigramas* en la jerga, y luego realizaremos un análisis de grafos para ver cómo se relacionan entre sí. 
+
+```{r bigramas}
+# Creamos duplas de tokens
+causa2 <- burn %>% 
+  filter(!is.na(motivo)) %>% 
+  select(motivo) %>% 
+  unnest_tokens(bigrama, motivo,
+                token = "ngrams",
+                n = 2)
+
+# Separamos los bigramas en dos columnas
+causa2 <- causa2 %>% 
+    separate(bigrama,
+           c("palabra1", "palabra2"),
+           sep = " ")
+
+# Eliminamos palabras vacías
+causa2 <- causa2 %>% 
+   filter(!palabra1 %in% vacias$palabra,
+         !palabra2 %in% vacias$palabra)
+
+# Eliminamos filas con datos nulos
+causa2 <- causa2 %>% 
+  filter(!is.na(palabra1))
+
+```
+
+Si tienen curiosidad por ver cuáles son los *bigramas* más frecuentes les dejo este gráfico:
+
+```{r}
+causa2 %>% 
+  unite(bigrama, palabra1, palabra2, sep = " ") %>% 
+  group_by(bigrama) %>% 
+  tally(sort = TRUE) %>% 
+  ungroup() %>% 
+  filter(n > 1) %>% 
+  ggplot(aes(x = n, y = reorder(bigrama, n))) +
+  geom_col(fill = "#EE5777") +
+  geom_text(aes(label = n), 
+            hjust = 1.2, 
+            size = 3) +
+  labs(title = "Motivos de Estrés en RRHH",
+    subtitle = "Bigramas más frecuentes",
+       x = NULL, y = "Bigramas")
+```
+Las cantidades de repeticiones son bajas porque sólo tenemos 160 comentarios para analizar. Sin embargo hay tópicos que podemos entender que la carga de trabajo (`carga laboral`, `mucho trabajo`, `muchos temas`, `muchas cosas`) es la principal causa de estrés dentro de RRHH.
+
+Ahora analicemos las relaciones entre estos conceptos:
+
+```{r fig.height=12, fig.width=10}
+# Creamos un objeto grafo
+grafo_causa2 <-  causa2 %>% 
+  count(palabra1, palabra2, sort = T) 
+
+grafo_causa2 <- grafo_causa2 %>% 
+  graph_from_data_frame()
+
+# Seleccionar 100 filas nada más 
+ggraph(grafo_causa2, layout = "nicely") +
+  geom_edge_link(aes(edge_alpha = n),
+                 show.legend = FALSE,
+                 arrow = arrow(type = "closed",
+                               length = unit(3, "mm"))) +
+  geom_node_point(color = "#EE5777", size = 3) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+  
+```
+
+Este gráfico inicial es confuso dado que tenemos muchas relaciones con bigramas que se repiten una sola vez. Pero prestemos atención a las zonas donde hay mucha concentración de conceptos, y eso nos va a dar una idea de cómo se relacionan las palabras entre sí. 
+
+Busquen el término `carga`. Las palabras `mucha` y `demasiada` apuntan a `carga` (esto se llama un *grafo dirigido*) y luego `carga` apunta a `laboral` que tiene a su vez relaciones con `agenda`, `presión` y `entorno`, por ejemplo.
+
+Si filtramos los bigramas que tienen más de una aparición nos encontramos con algo así
+
+```{r}
+# Creamos un objeto grafo
+grafo_causa2 <-  causa2 %>% 
+  count(palabra1, palabra2, sort = T) %>% 
+  filter(n > 1)
+
+grafo_causa2 <- grafo_causa2 %>% 
+  graph_from_data_frame()
+
+# Seleccionar 100 filas nada más 
+ggraph(grafo_causa2, layout = "nicely") +
+  geom_edge_link(aes(edge_alpha = n),
+                 show.legend = FALSE,
+                 arrow = arrow(type = "closed",
+                               length = unit(3, "mm"))) +
+  geom_node_point(color = "#EE5777", size = 3) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+Vemos que los términos `mucho`, `muchos`, `muchas`, `mucha` si bien se refieren a lo mismo, a un exceso, al estar escrito de diferentes maneras genera 4 términos diferentes, así que intentaremos repetir el primer grafo con todos los conceptos, pero eliminando las palabras en plural y su género (en la medida de lo posible) para intentar generar mayor claridad.
+
+Este proceso de limpieza nos permitió detectar que el término `tiempo` también tiene mucha relación con varios conceptos que contribuyen añ burn out en RRHH.
+
+```{r fig.height=12, fig.width=11}
+# Comenzamos limpieza de datos
+burn2 <- burn %>% 
+  mutate(motivo = str_replace(motivo, "alas", "a las"),
+         motivo = str_replace(motivo, "años", "año"),
+         motivo = str_replace(motivo, "[aá]reas", "área"),
+         motivo = str_replace(motivo, "asignadas", "asignados"),
+         motivo = str_replace(motivo, "aspectos", "aspecto"),
+         motivo = str_replace(motivo, "beneficios", "beneficio"),
+         motivo = str_replace(motivo, "buen[ao]s|buena", "bueno"),
+         motivo = str_replace(motivo, "claras|claros", "claro"),
+         motivo = str_replace(motivo, "clientes", "cliente"),
+         motivo = str_replace(motivo, "deberían", "deben"),
+         motivo = str_replace(motivo, "demasiadas", "demasiada"),
+         motivo = str_replace(motivo, "decisiones", "decisión"),
+         motivo = str_replace(motivo, "días", "día"),
+         motivo = str_replace(motivo, "económica|economica", "económico"),
+         motivo = str_replace(motivo, "exigencias", "exigencia"),
+         motivo = str_replace(motivo, "externos", "externo"),
+         motivo = str_replace(motivo, "extras", "extra"),
+         motivo = str_replace(motivo, "estres", "estrés"),
+         motivo = str_replace(motivo, "expectativas", "expectativa"),
+         motivo = str_replace(motivo, "excesivas", "excesiva"),
+         motivo = str_replace(motivo, "extern[ao]s", "externo"),
+         motivo = str_replace(motivo, "globales", "global"),
+         motivo = str_replace(motivo, "ha[bc]er[lm]e|hago|hace", "hacer"),
+         motivo = str_replace(motivo, "horas", "hora"),
+         motivo = str_replace(motivo, "intern[ao]s", "interno"),
+         motivo = str_replace(motivo, "jef[ae]", "jefe"),
+         motivo = str_replace(motivo, "jornadas", "jornada"),
+         motivo = str_replace(motivo, "lasrg[ao]s|larga", "largo"),
+         motivo = str_replace(motivo, "l[ií]deres", "lider"),
+         motivo = str_replace(motivo, "laborales", "laboral"),
+         motivo = str_replace(motivo, "locales", "local"),
+         motivo = str_replace(motivo, "malos", "mal"),
+         motivo = str_replace(motivo, "much[ao]", "mucho"),
+         motivo = str_replace(motivo, "necesari[ao]|necesari[ao]s", "necesario"),
+         motivo = str_replace(motivo, "nuev[ao]|nuev[ao]s", "nuevo"),
+         motivo = str_replace(motivo, "poca|poc[ao]s", "poco"),
+         motivo = str_replace(motivo, "presion|presiones", "presión"),
+         motivo = str_replace(motivo, "problemas", "problema"),
+         motivo = str_replace(motivo, "propia|propi[ao]s", "propio"),
+         motivo = str_replace(motivo, "proyectos", "proyecto"),
+         motivo = str_replace(motivo, "realizo|realizadas|realizada", "realizar"),
+         motivo = str_replace(motivo, "reglas", "regla"),
+         motivo = str_replace(motivo, "relaciones|relacion", "relación"),
+         motivo = str_replace(motivo, "responsabilidades", "responsabilidad"),
+         motivo = str_replace(motivo, "respuestas", "respuesta"),
+         motivo = str_replace(motivo, "responsabilidades", "responsabilidad"),
+         motivo = str_replace(motivo, "resultados", "resultado"),                motivo = str_replace(motivo, "situacion|situaciones", "situación"),
+         motivo = str_replace(motivo, "soluciones", "solución"),
+         motivo = str_replace(motivo, "tareas", "tarea"),
+         motivo = str_replace(motivo, "temas", "tema"),
+         motivo = str_replace(motivo, "tenemos|tengo", "tener"),
+         motivo = str_replace(motivo, "tiempos", "tiempo"),
+         motivo = str_replace(motivo, "tomado", "tomar"),
+         motivo = str_replace(motivo, "toxico|tóxic[ao]|tóxic[ao]s", "tóxico"),
+         motivo = str_replace(motivo, "trabajando", "trabajar"))
+
+burn2 <- burn2 %>% 
+  mutate(motivo = str_replace(motivo, "much[ao]s", "mucho"))
+
+# Creamos duplas de tokens
+causa3 <- burn2 %>% 
+  filter(!is.na(motivo)) %>% 
+  select(motivo) %>% 
+  unnest_tokens(bigrama, motivo,
+                token = "ngrams",
+                n = 2)
+
+# Separamos los bigramas en dos columnas
+causa3 <- causa3 %>% 
+    separate(bigrama,
+           c("palabra1", "palabra2"),
+           sep = " ")
+
+# Eliminamos palabras vacías
+causa3 <- causa3 %>% 
+   filter(!palabra1 %in% vacias$palabra,
+         !palabra2 %in% vacias$palabra)
+
+# Eliminamos filas con datos nulos
+causa3 <- causa3 %>% 
+  filter(!is.na(palabra1))
+
+# Creamos un objeto grafo
+grafo_causa3 <-  causa3 %>% 
+  count(palabra1, palabra2, sort = T) 
+
+grafo_causa3 <- grafo_causa3 %>% 
+  graph_from_data_frame()
+
+# Seleccionar 100 filas nada más 
+ggraph(grafo_causa3, layout = "nicely") +
+  geom_edge_link(aes(edge_alpha = n),
+                 show.legend = FALSE,
+                 arrow = arrow(type = "closed",
+                               length = unit(3, "mm"))) +
+  geom_node_point(color = "#EE5777", size = 3) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+
+
+## Check out
+
+Pueden revisar y utilizar todo el contenido de R4HR Club de R para RRHH disponible en [Google Drive](https://drive.google.com/drive/folders/1Qck3z_t6XLRXb2vbN-00931DgdJZ0yse?usp=sharing) y [YouTube](https://youtube.com/playlist?list=PLZuVytUJrxQlcqu6l-P3ou4vV2mRJU2Ka).
+
+Recuerden hacer todas las consultas en el canal **#auxilio** en [Slack](https://join.slack.com/t/r4hr/shared_invite/zt-1gumsj4qq-EGDCcv8UCetCipbiiaS5xA)
+
+Seguinos en [nuestras redes sociales](https://linktr.ee/r4hrclub)
